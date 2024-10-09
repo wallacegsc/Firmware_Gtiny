@@ -16,7 +16,7 @@
 #define IODIRA                  0x00                                                               // I/O DIRECTION-A Register                                
 #define IODIRB                  0x01                                                               // I/O DIRECTION-A Register                                
 #define ALL_RESET               0xff      
-#define ALL_SET                 0x00      
+#define ALL_SET                 0x40      
 #define IOCONA                  0x0a                                                               // I/O EXPANDER CONFIGURATION-A Register
 #define GPPUA                   0x0c
 #define GPPUB                   0x0d 

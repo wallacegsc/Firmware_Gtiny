@@ -5,9 +5,7 @@ struct storage_data_t storage_data;
 struct storage_device_t storage_device;
 
 char TAG[9] = "Storage";
-#define RESET_M 1
-// #define MEMORY_INFO
-#define CHECK_SAVE
+
 // Primeira posicao do log é a referencia geral de endereco
 
 static void storage_log_task(void *pvParameters)
@@ -16,6 +14,7 @@ static void storage_log_task(void *pvParameters)
     uint32_t log_data[4], checksum;
     uint8_t id_flag_log, info;
     time_t tt;
+    uint8_t * response = (uint8_t *)malloc(11);
     for(;;)
     {
         if (uxQueueMessagesWaiting(storage_data.save_logs_queue)&&
@@ -23,8 +22,8 @@ static void storage_log_task(void *pvParameters)
         {
             xQueueReceive(storage_data.save_logs_queue, &log_data, 0);
             
-            printf("salvado\n"); 
-            printf("storage_data.manager_eeprom: %d\n",storage_data.manager_eeprom);      
+            // printf("Salving\n"); 
+            // printf("storage_data.manager_eeprom: %d\n",storage_data.manager_eeprom);      
             id_flag_log = (uint8_t) log_data[0];
             tt =                    log_data[1];
             info =        (uint8_t) log_data[2];
@@ -33,24 +32,19 @@ static void storage_log_task(void *pvParameters)
             storage_eeprom->save_data(&tt, 4);
             storage_eeprom->save_data(&info, 1);
             storage_eeprom->save_data(&checksum,4);
+            // printf("tt: %ld\n",tt);
             // printf("id_flag_log: %d \n", id_flag_log);
             // printf("tt: %d \n", log_data[1]);
             // printf("info: %d  \n", info );
             // printf("checksum: %d  \n\n\n\n", log_data[3]);
-            // uint8_t * response = (uint8_t *)malloc(11);
-           
-            // storage_eeprom->load_data(response, SIZE_LOG, storage_data.manager_eeprom);
-            // for (size_t i = 0; i < 10; i++)
-            // {
-            //     printf("%d \n", response[i]);
-            // }
-            
+             
             // free(response);
             #ifdef CHECK_SAVE
                 uint8_t ldc[10], fail; //ldc -> log data check
                 uint32_t ccs, ctt;
                 for(uint8_t check = 0; check<1; check++)
                 {
+                    vTaskDelay(10/portTICK_PERIOD_MS);
                     fail = 0;
                     storage_eeprom->load_data(ldc, SIZE_LOG, storage_data.manager_eeprom - SIZE_LOG);
 
@@ -86,7 +80,7 @@ static void storage_log_task(void *pvParameters)
 
                     if(!fail)
                     {
-                        printf("passou\n");
+                        // printf("passou\n");
                         break;
                     }
                     if(check == 1)
@@ -104,8 +98,8 @@ static void storage_log_task(void *pvParameters)
             // }
             // free(response);
             // printf("End %d\n",heap_caps_get_free_size(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT));
-            xSemaphoreGive(storage_data.xSemaphore_eeprom);
-        
+            // printf("Dando da task save\n");
+            xSemaphoreGive(storage_data.xSemaphore_eeprom);       
         }
         vTaskDelay(50/portTICK_PERIOD_MS);
     }
@@ -113,6 +107,7 @@ static void storage_log_task(void *pvParameters)
 
 void reset_memory(void)
 {
+    printf("Resetando memoria\n");
     uint32_t a;
     storage_data.manager_eeprom = 10; 
     storage_data.pos_recent_log = 10;
@@ -131,6 +126,16 @@ void reset_memory(void)
     eeprom_write(ADDRESS_EEPROM, a, &storage_data.memory_full, 2);
     a = EEPROM_FULL_SIZE - 2;
     eeprom_write(ADDRESS_EEPROM, a, &storage_data.memory_full, 2);
+
+    storage_data.flag_is_inverted = 0;
+    storage_data.manager_eeprom = 10;
+
+    storage_data.save_logs_queue = xQueueCreate(10, sizeof(uint32_t)* 4);
+
+    storage_data.xSemaphore_eeprom = xSemaphoreCreateBinary();
+    xSemaphoreGive(storage_data.xSemaphore_eeprom);
+
+    xTaskCreate(storage_log_task,"storage_log_task", 2*1024, NULL, 10, NULL);
 
 }
 
@@ -151,185 +156,54 @@ void save_memory(void)
     eeprom_write(ADDRESS_EEPROM, a, &storage_data.memory_full, 2);
 }
 
-void check_num_logs(uint16_t* required_logs)
+int check_num_logs(uint16_t* logs_disp, uint16_t required_logs)
 { 
-    if (storage_data.memory_full == 0) 
+    if (!storage_data.memory_full) 
     {
-        uint16_t logs_disp = storage_data.pos_recent_log/10;
-
-        if (storage_data.pos_recent_log == 10)
-            *required_logs = 0; 
-
-        if (*required_logs >= logs_disp)
-            *required_logs = logs_disp;
+        uint16_t logs_saved = storage_data.pos_recent_log/10;
+        if (storage_data.pos_recent_log == storage_data.manager_eeprom){
+            *logs_disp = 0; 
+            return ZERO_LOGS;
+        }
+        if (required_logs >= logs_saved){
+            *logs_disp = logs_saved;
+            return DEFAULT;
+        }
+        if (required_logs < logs_saved){
+            *logs_disp = required_logs;
+            return DEFAULT;
+        }
+            
+    }else{
+        //Dado que a capacidade de EEPROM é grande, não será enviado todos os logs
+        *logs_disp = required_logs;
+        return PART_LOGS_FULL;
     }
+    return -1;
 }
 
-// void load_logs(uint32_t initial_address)
-// {
-//     if(storage_data.memory_full)
-//     {
-
-//     }
-
-//     if(!storage_data.memory_full)
-//     {
-//         if(storage_data.pos_recent_log >=  (initial_address - 10 + size_num_logs))
-//     }
-// }
-
-esp_err_t load_memory_all(uint16_t num_logs,uint32_t initial_address ,uint8_t *response)
+esp_err_t load_memory(uint32_t size_num_logs, uint32_t initial_address ,uint8_t *response)
 {
     xSemaphoreTake(storage_data.xSemaphore_eeprom, portMAX_DELAY);
-    uint16_t size_num_logs = num_logs*10;
     //O controle do endereço tem que ser feito por fora
         size_t i = 0;
-        for (; (i + 250) <= size_num_logs; i += 250)
+        
+        for (; (i + EEPROM_READ_SIZE) <= size_num_logs; i += EEPROM_READ_SIZE)
         {
-            eeprom_read(ADDRESS_EEPROM, initial_address + i, response + i, 250); 
-            vTaskDelay(30/portTICK_PERIOD_MS);
+            eeprom_read(ADDRESS_EEPROM, initial_address + i, response + i, EEPROM_READ_SIZE); 
+            // vTaskDelay(10/portTICK_PERIOD_MS);
         }
 
         //Quando 25 passar do total, preenche o restante
         if ( (size_num_logs - i) != 0)
             eeprom_read(ADDRESS_EEPROM, i + initial_address, response + i, (size_num_logs - i));
     
-
     xSemaphoreGive(storage_data.xSemaphore_eeprom);
     return ESP_OK; 
 }
 
-
-esp_err_t load_memory(uint16_t num_logs,uint32_t initial_address ,uint8_t *response)
-{
-    
-    xSemaphoreTake(storage_data.xSemaphore_eeprom, portMAX_DELAY);
-    uint16_t size_num_logs = num_logs*10;
-    
-    if (storage_data.memory_full == 0) 
-    {
-
-        if (storage_data.pos_recent_log == 10 || num_logs == 0)
-        {
-            for (size_t i = 0; i < size_num_logs + 1; i++)
-            {
-                response[i] = 0;
-                vTaskDelay(10/portTICK_PERIOD_MS);
-            }
-            xSemaphoreGive(storage_data.xSemaphore_eeprom);
-            return ESP_OK;
-        }
-        uint16_t logs_disp = storage_data.pos_recent_log/10;
-        if (num_logs >= logs_disp)
-        {
-            //Preenche de 25 em 25 logs -> (tamanho = 250)
-            size_t i = 0;
-            for (; (i + 250) <= storage_data.pos_recent_log; i += 250)
-            {
-                eeprom_read(ADDRESS_EEPROM, 10 + i, response + i, 250); 
-                vTaskDelay(30/portTICK_PERIOD_MS);
-            }
-
-            //Quando 25 passar do total, preenche o restante
-            if ( (storage_data.pos_recent_log - i) != 0){
-                eeprom_read(ADDRESS_EEPROM, 10 + i, response + i, (storage_data.pos_recent_log - i));}
-
-            
-        }
-        else
-        {   
-            uint32_t initial_adress = storage_data.pos_recent_log - size_num_logs + 10; //+10 pois assim inclui o log da posição mais recente
-            size_t i = 0;
-            //começa do endereço inicial
-
-            for (; (i + 250) <= size_num_logs; i += 250)
-            {
-                
-                eeprom_read(ADDRESS_EEPROM, i + initial_adress, response + i, 250);
-                
-                vTaskDelay(30/portTICK_PERIOD_MS);
-            }
-            //Quando 25 passar do total, preenche o restante
-            if ( (size_num_logs - i) != 0){
-                eeprom_read(ADDRESS_EEPROM, i + initial_adress, response + i, (size_num_logs - i));
-            }
-            
-            
-        }
-    }
-
-    if (storage_data.memory_full == 1)
-    {
-        uint16_t logs_disp_recent = storage_data.pos_recent_log/10;
-        
-        if (logs_disp_recent >= num_logs)
-        {
-            uint32_t initial_adress = storage_data.pos_recent_log - size_num_logs + 10;
-            size_t i = 0;
-            
-            for (; (i + 250) <= size_num_logs; i += 250)
-            {
-                eeprom_read(ADDRESS_EEPROM, i + initial_adress, response + i, 250);
-                vTaskDelay(30/portTICK_PERIOD_MS);
-            }
-       
-            if ( (size_num_logs - i) != 0)
-                eeprom_read(ADDRESS_EEPROM, i + initial_adress, response + i, (size_num_logs - i));
-            
-        }
-        
-        else
-        {
-            size_t address, i = 0;
-            uint32_t initial_address = ADDRESS_LAST_LOG - (num_logs - logs_disp_recent)*10 + 10;  //num_logs - logs_disp_recent -> logs faltantes para serem buscados no fim da memoria
-            
-            if(num_logs > MAX_LOGS)
-                initial_address = storage_data.pos_old_log;
-
-            address = initial_address;
-            //Carregando os dados mais antigos
-            for ( ; (address + 250) <= ADDRESS_LAST_LOG; address += 250 , i+= 250)
-            {
-                eeprom_read(ADDRESS_EEPROM, address, response + i, 250); 
-                vTaskDelay(30/portTICK_PERIOD_MS);
-            }
-
-            if ( (ADDRESS_LAST_LOG - address) != 0 || address == ADDRESS_LAST_LOG)
-            {
-                eeprom_read(ADDRESS_EEPROM, address, response + i, ADDRESS_LAST_LOG - address + 10);
-                i += ADDRESS_LAST_LOG - address + 10;
-                vTaskDelay(30/portTICK_PERIOD_MS);
-            }
-            
-            
-            //carregando os dados mais novos
-            uint32_t initial_address_last_data = i;
-            uint16_t size_logs_faltantes = logs_disp_recent*10;
-            i = 0;
-
-            for (; (i + 250) <= size_logs_faltantes; i += 250, initial_address_last_data+= 250)
-            {
-                eeprom_read(ADDRESS_EEPROM, 10 + i, response + initial_address_last_data, 250); 
-                vTaskDelay(30/portTICK_PERIOD_MS);
-            }
-            
-            if ( (size_logs_faltantes - i) != 0)
-                eeprom_read(ADDRESS_EEPROM, 10 + i, response + initial_address_last_data, (size_logs_faltantes - i));
-            
-        }
-    }
-   
-    xSemaphoreGive(storage_data.xSemaphore_eeprom);
-    return ESP_OK;    
-}
-
-
-
 int storage_init(void)
 {   
-    #ifdef RESET_M
-        reset_memory();
-    #endif
     storage_data.manager_eeprom = 0;
     storage_data.memory_full = 0; // indica se a memória já foi cheia algumas vez para a administracao do pos_recent_log e pos_old_log
     storage_data.pos_old_log = 0;
@@ -385,8 +259,9 @@ int storage_init(void)
             
         
         #ifdef RESET_M
-            storage_data.flag_is_inverted = 0;
-            storage_data.manager_eeprom = 10;
+            reset_memory();
+            ESP_LOGI(TAG, "Dispositivo configurado com sucesso");
+            return ESP_OK;
         #endif
         
         #ifdef MEMORY_INFO
@@ -409,7 +284,11 @@ int storage_init(void)
         return 0;
     }
     
-
+     #ifdef RESET_M
+            reset_memory();
+            ESP_LOGI(TAG, "Dispositivo configurado com sucesso");
+            return ESP_OK;
+    #endif
     
     uint8_t log[SIZE_LOG];
     uint32_t initial_flag_log_position = 0x0A;
@@ -422,11 +301,14 @@ int storage_init(void)
     else if(log[0] == flag_inverter_relay) storage_data.flag_is_inverted = 1;
     else if(log[0] == flag_default_event ) storage_data.flag_is_inverted = 0;
     else if(log[0] == flag_inverter_event) storage_data.flag_is_inverted = 1;
+    else if(log[0] == flag_default_ultra) storage_data.flag_is_inverted = 0;
+    else if(log[0] == flag_inverter_ultra) storage_data.flag_is_inverted = 1;
+    else if(log[0] == flag_default_auto) storage_data.flag_is_inverted = 0;
+    else if(log[0] == flag_inverter_auto) storage_data.flag_is_inverted = 1;
     else
     {
         printf("Checagem de memoria falhou\nIniciando da posicao 10\n");
         reset_memory();
-        storage_data.save_logs_queue = xQueueCreate(10, sizeof(uint32_t)* 4);
         printf("storage_data.pos_old_log: %u\n",storage_data.pos_old_log);
         printf("storage_data.pos_recent_log: %u\n", storage_data.pos_recent_log);
         printf("storage_data.manager_eeprom: %u\n", storage_data.manager_eeprom);
@@ -561,7 +443,7 @@ int storage_init(void)
     storage_data.xSemaphore_eeprom = xSemaphoreCreateBinary();
     xSemaphoreGive(storage_data.xSemaphore_eeprom);
 
-    xTaskCreate(storage_log_task,"storage_log_task", 1024, NULL, 10, NULL);
+    xTaskCreate(storage_log_task,"storage_log_task", 2*1024, NULL, 10, NULL);
     ESP_LOGI(TAG,"Dispositivo configurado com sucesso");
     return 0;
 }

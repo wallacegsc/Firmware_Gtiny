@@ -3,6 +3,7 @@
 #include "storage.h"
 #include <sys/time.h>
 #include "esp_ota_ops.h"
+#include "RSA.c"
 
 #define BUF_SIZE 1024
 #define INPUT_LENGTH 3
@@ -27,6 +28,96 @@ typedef struct __attribute__((__packed__)){
     uint32_t firm_size;
     uint32_t checksum;
 }packet_t;
+
+void header_send(char type[3 + 1], unsigned char b1, unsigned char b2, unsigned char key_iv[16])
+{
+    unsigned char header[5],
+                  headerEncrypt[5],
+                  buffer_uart[16 + 5];
+
+
+    header[0] = type[0];
+    header[1] = type[1];
+    header[2] = type[2];
+    header[3] = b1;
+    header[4] = b2;
+
+    for (size_t i = 0; i < 16; i++){
+        buffer_uart[i] = key_iv_buffer[i];
+    }
+
+    mbedtls_aes_crypt_cfb8(&aes, MBEDTLS_AES_ENCRYPT, 5, key_iv, header, headerEncrypt);
+
+    for (size_t i = 0; i < 5; i++){
+        buffer_uart[i+16] = (unsigned char) headerEncrypt[i];
+    }
+
+    serial_uart_write((char *)buffer_uart, 16 + 5);
+}
+
+void mass_send(uint8_t max_add, 
+               uint8_t* response_input,  
+               uint8_t* response_output, 
+               uint16_t size,
+               uint32_t *address_recent_log, 
+               unsigned char *buffer_uart, 
+               struct storage_device_t *storage_eeprom)
+{   
+    uint16_t updated_position;
+    for (uint8_t i = 1; i <= max_add; i++)
+    {
+        updated_position = 0;
+        storage_eeprom->load_memory(MAX_SIZE, *address_recent_log, response_output);
+        
+        //Inverte o vetor
+        for (int last_log = size - 10; last_log >= 0; last_log -= 10){
+            for(int j = 0; j < 10; j++)
+                response_input[updated_position + j] = response_output[last_log + j];
+            updated_position += 10;
+        }
+
+        mbedtls_aes_crypt_cfb8(&aes, MBEDTLS_AES_ENCRYPT, size, key_iv, response_input, response_output);
+
+        memcpy(buffer_uart, response_output, size * sizeof(char));
+
+        size_t a = 0;
+        for (; (a + 2000) < size; a += 2000)
+            serial_uart_write((char *)(buffer_uart+a), 2000);
+        serial_uart_write((char *)(buffer_uart+ a), size - a);
+
+        //Evitar address negativo
+        if (i < max_add)
+            *address_recent_log -= size;
+        vTaskDelay(10/portTICK_PERIOD_MS);
+    }
+}
+
+void minor_send(uint16_t size_remaining_logs, 
+                uint8_t* response_input, 
+                uint8_t* response_output, 
+                uint32_t address,
+                unsigned char *buffer_uart,
+                struct storage_device_t *storage_eeprom)
+{
+    
+    uint16_t updated_position = 0;  
+    storage_eeprom->load_memory(size_remaining_logs, address, response_output);
+
+    for (int last_log = size_remaining_logs - 10; last_log >= 0; last_log -= 10){
+        for(int j = 0; j < 10; j++)
+            response_input[updated_position + j] = response_output[last_log + j];
+        updated_position += 10;
+    }
+
+    mbedtls_aes_crypt_cfb8(&aes, MBEDTLS_AES_ENCRYPT, size_remaining_logs, key_iv, response_input, response_output);
+
+    memcpy(buffer_uart, response_output, size_remaining_logs * sizeof(char));
+            
+    size_t i = 0;
+    for (; (i + 2000) <  size_remaining_logs; i += 2000)
+        serial_uart_write(((char *)buffer_uart+i), 2000);
+    serial_uart_write((char *)(buffer_uart+ i), size_remaining_logs - i);
+}
 
 void response_c01()
 {
@@ -110,7 +201,7 @@ void response_c03()
 
     struct sensors_t *sensors_guardian = sensors_instance();
     sensors_guardian->sensors_autoteste();
-    gpio_install_isr_service(0);
+   
     printf("Resultado do autoteste -> ");
     for (size_t i = 0; i < 8; i++)
     {
@@ -316,7 +407,7 @@ void response_c06()
 
             uart_flush_input(UART_NUM_1);
             
-            uint32_t *timestamp_esp = output_serial_timestamp;
+            uint32_t *timestamp_esp = (uint32_t*)output_serial_timestamp;
             printf("ts recebido- %d \n", *timestamp_esp);
             struct timeval tv_now;
             tv_now.tv_sec = *timestamp_esp;
@@ -340,58 +431,109 @@ void response_c06()
 void response_c07()
 {
     struct storage_device_t *storage_eeprom = storage_device_instance();
+    extern struct storage_data_t storage_data;
 
-    uint16_t num_logs = 250;
-    storage_eeprom->check_num_logs(&num_logs);
+    uint32_t address,
+             size_logs_disp;
+    uint16_t num_logs_disp,
+             updated_position;
+    uint8_t qnt_returned,
+            remaining_logs,
+            max_add,
+            *response_output = (uint8_t*) malloc(MAX_SIZE + 1),
+            *response_input =  (uint8_t*) malloc(MAX_SIZE + 1);
+    unsigned char buffer_uart[MAX_SIZE + 1];
 
-    uint32_t size_msg = num_logs * 10 + 5;
-    uint32_t size_logs = num_logs*10;
-    uint8_t *response_output = (uint8_t*) malloc(size_msg + 1);
-    uint8_t *response_input =  (uint8_t*) malloc(size_msg + 1);
-    unsigned char buffer_uart[16 + size_msg];
-    
-    storage_eeprom->load_memory(num_logs, response_output);
-    response_input[0] = 'R';
-    response_input[1] = '0';
-    response_input[2] = '7';
-    response_input[3] = num_logs>>8;
-    response_input[4] = num_logs;
-    uint16_t updated_position = 5;
-    //ESSE FOR INVERTE E COLOCA OS MAIS RECENTES PRIMEIRO
-    for (int last_log = size_logs - 10; last_log >= 0; last_log -= 10)
-    {
-        for(int j = 0; j < 10; j++)
-            response_input[updated_position + j] = response_output[last_log + j]; 
-        updated_position += 10;
-        vTaskDelay(10/portTICK_PERIOD_MS);
+    qnt_returned = storage_eeprom->check_num_logs(&num_logs_disp, 200);
+    size_logs_disp = num_logs_disp*SIZE_LOG;
+
+    address = 0;
+    if (qnt_returned == ZERO_LOGS){
+        
+        for (size_t i = 0; i < 16; i++){
+            key_iv[i] = key_iv_buffer[i];
+        }
+        header_send("R07", 0, 0, key_iv);
+        
     }
 
-     
+    if (qnt_returned == DEFAULT){
 
-    for (size_t i = 0; i < 16; i++)
-    {
-        key_iv[i] = key_iv_buffer[i];
-        buffer_uart[i] = key_iv_buffer[i];
-    }
-
-    mbedtls_aes_crypt_cfb8(&aes, MBEDTLS_AES_ENCRYPT, size_msg, key_iv, response_input, response_output);
-    
-    for (size_t i = 0; i < size_msg; i++)
-    {
-        buffer_uart[i+16] = (unsigned char) response_output[i];
-    }
-
-    free(response_input);
-    free(response_output);
+        //Enviando o cabeçalho : R07(Quantidade de logs)
+        for (size_t i = 0; i < 16; i++){
+            key_iv[i] = key_iv_buffer[i];
+        }
+        header_send("R07", (unsigned char) (num_logs_disp>>8), (unsigned char) num_logs_disp, key_iv);
+        max_add = size_logs_disp/MAX_SIZE;
  
-    size_t i = 0;
-    for (; (i + 2000) < (16 + size_msg ); i += 2000)
-        serial_uart_write((char *)buffer_uart, i + 2000);
+        if (max_add > 0){
+            address = storage_data.pos_recent_log - MAX_SIZE + ADDRESS_FIST_LOG;
+            mass_send(max_add, response_input, response_output, MAX_SIZE, &address, buffer_uart, storage_eeprom);
+        } 
 
-    serial_uart_write((char *)buffer_uart, 16 + size_msg - i);
+        remaining_logs = (size_logs_disp % MAX_SIZE)/SIZE_LOG; 
+        if (remaining_logs){
+            if (address == 0)
+                address = storage_data.pos_recent_log - (remaining_logs * SIZE_LOG) + ADDRESS_FIST_LOG;
+            else
+                address -= remaining_logs*SIZE_LOG;
+            minor_send(remaining_logs * SIZE_LOG, response_input, response_output, address, buffer_uart, storage_eeprom);   
+        }
+          
+    }
+    
+    if (qnt_returned == PART_LOGS_FULL){
 
-    printf("%u Logs enviados\n", num_logs);
+        uint16_t size_final_logs = 0;
+    
+        for (size_t i = 0; i < 16; i++){
+            key_iv[i] = key_iv_buffer[i];
+        }
+        header_send("R07", (unsigned char) (num_logs_disp>>8), (unsigned char) num_logs_disp, key_iv);
 
+        if (num_logs_disp > storage_data.pos_recent_log/SIZE_LOG){
+            size_final_logs = num_logs_disp*SIZE_LOG - (storage_data.pos_recent_log);
+            size_logs_disp -= size_final_logs;
+        }
+
+        address = 0;
+        max_add = size_logs_disp/MAX_SIZE;
+        if (max_add > 0){
+            address = storage_data.pos_recent_log - MAX_SIZE + ADDRESS_FIST_LOG;
+            mass_send(max_add, response_input, response_output, MAX_SIZE, &address, buffer_uart, storage_eeprom);
+        } 
+
+        remaining_logs = (size_logs_disp % MAX_SIZE)/SIZE_LOG; 
+        if (remaining_logs){
+            if (address == 0)
+                address = storage_data.pos_recent_log - (remaining_logs * SIZE_LOG) + ADDRESS_FIST_LOG;
+            else
+                address -= remaining_logs*SIZE_LOG;
+            minor_send(remaining_logs * SIZE_LOG, response_input, response_output, address, buffer_uart, storage_eeprom);
+        }
+
+        if (num_logs_disp > storage_data.pos_recent_log/SIZE_LOG)
+        {
+            max_add = size_final_logs/MAX_SIZE;
+            if(max_add){
+                address = ADDRESS_LAST_LOG - MAX_SIZE + ADDRESS_FIST_LOG;
+                mass_send(max_add, response_input, response_output, MAX_SIZE, &address, buffer_uart, storage_eeprom); 
+            }
+     
+            remaining_logs = (size_final_logs % MAX_SIZE)/SIZE_LOG;
+            if(remaining_logs){
+                if (address == 0)
+                address = ADDRESS_LAST_LOG - (remaining_logs * SIZE_LOG) + ADDRESS_FIST_LOG;
+            else
+                address -= remaining_logs*SIZE_LOG;
+            minor_send(remaining_logs * SIZE_LOG, response_input, response_output, address, buffer_uart, storage_eeprom);
+            }
+        }
+    }
+
+    ESP_LOGI("RX_TASK_TAG", "Send %d Logs",num_logs_disp);
+    free(response_input);
+    free(response_output);  
 }
 
 static void serial_uart_read(void *arg)
@@ -474,6 +616,10 @@ static void serial_uart_read(void *arg)
                         printf("Req C07 \n");
                         response_c07();
                     }
+                    else if (output_serial[2] == '8')
+                    {
+                         RSA_test();
+                    }
                     
                 }
             }
@@ -534,7 +680,7 @@ esp_err_t serial_uart_init(void)
     mbedtls_aes_setkey_enc(&aes, key, 128);
     /* mbedtls_aes_free(&aes); */
 
-    xTaskCreate(serial_uart_read, "serial_uart_read", 6154, NULL, 11, NULL);
+    xTaskCreate(serial_uart_read, "serial_uart_read", 6154 + 512, NULL, 11, NULL);
 
     return ESP_OK;
 }
@@ -542,7 +688,8 @@ esp_err_t serial_uart_init(void)
 esp_err_t serial_uart_write(char *buffer_tx, uint32_t size)
 {
     // Write data to UART.
-    //printf("\nSTRLEN: %d\n", size);
+    // printf("\nSTRLEN: %d\n", size);
+    // printf("buffer_tx :%p\n",buffer_tx);
     uart_write_bytes(UART_NUM_1, (char*)buffer_tx, size);
     return ESP_OK;
 

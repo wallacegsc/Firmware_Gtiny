@@ -322,6 +322,10 @@ esp_err_t mic_autoteste(void)
  */
 esp_err_t mic_init()
 {    
+    gpio_reset_pin(SDCARD_CS_PIN);
+    gpio_set_direction(SDCARD_CS_PIN, GPIO_MODE_OUTPUT);
+    gpio_set_level(SDCARD_CS_PIN, HIGH);
+
     mic_driver_data.mic_i2s_methods = i2s_controller_instance();
     mic_driver_data.mic_i2s_data = &i2s_data_controller;
 
@@ -354,7 +358,7 @@ esp_err_t mic_init()
     mic_i2s_methods->i2s_init();   
 
     TaskHandle_t i2sMemsWriterTaskHandle;
-    xTaskCreatePinnedToCore(i2sMemsWriterTask, "I2S Writer Task", 3*4096, sampler, 1, &i2sMemsWriterTaskHandle, 1);
+    xTaskCreatePinnedToCore(i2sMemsWriterTask, "I2S Writer Task", 2*4096, sampler, 1, &i2sMemsWriterTaskHandle, 1);
     i2s_start_mic(I2S_NUM_1,i2sMemsConfigBothChannels, 4*NUM_SAMPLES_RECORDED, i2sMemsWriterTaskHandle);
     
     return ESP_OK;

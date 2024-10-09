@@ -24,7 +24,7 @@ s = serial.Serial(port='COM7',
                   timeout=20)
 
 t = ''
-firm_bin_path = r"C:\Users\LSE\Desktop\Hub\Guardiao\app_nn\app_nn\build\app.bin"
+firm_bin_path = r"C:\Users\LSE\Desktop\Hub\Guardiao\app_nn_tiny\app_nn\build\app.bin"
 with open(firm_bin_path, "rb") as f:
     read_data = f.read()
     size_firm = len(read_data)

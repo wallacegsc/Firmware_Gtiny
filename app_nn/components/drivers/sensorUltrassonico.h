@@ -9,12 +9,16 @@
 #include "esp_log.h"
 #include "esp_err.h"
 
-
+#include "storage.h"
 
 #include <stdio.h>
 
 #define TIMER_DIVIDER (2)
 #define TIMER_SCALE 8000
+#define MINIMAL_DISTANCE 2
+#define TRESHOLD_RANGE 2
+#define TRESHOLD_ULTRA 10
+// #define SHOW_ULTRA_RESULTS
 
 #define PWM_OUTPUT_PIN GPIO_NUM_23
 #define RECV_ECHO_PIN GPIO_NUM_12
@@ -50,12 +54,15 @@ struct ultrasonic_driver_data_t
     uint8_t u_distance_threshold;
 };
 
-typedef ultrasonic_status_t (*ultrasonic_init_t)(struct ultrasonic_driver_data_t *driver_data);
+typedef ultrasonic_status_t (*ultrasonic_init_data_t)(struct ultrasonic_driver_data_t *driver_data),
+                            (*ultrasonic_init_t)();
 typedef uint32_t (*ultrasonic_get_distance_t)(struct ultrasonic_driver_data_t *driver_data);
 
 struct ultrasonic_driver_t
 {
+    
     ultrasonic_init_t init;
+    ultrasonic_init_data_t init_data;
     ultrasonic_get_distance_t get_distance;
 };
 

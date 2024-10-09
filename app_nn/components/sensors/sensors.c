@@ -16,19 +16,7 @@ uint8_t class_index_detection = 0;
 
 // #define SAVE_EEPROM 1
 
-void task_detect(void *pvParameters)
-{
-    struct ultrasonic_driver_data_t ultra_attributes = ultrasonic_get_attributes();
-    struct ultrasonic_driver_t *ultra = ultrasonic_driver_instance();
 
-    for(;;)
-    {  
-        printf("cm: %d\tticks: %d\ttempo: %d\n", ultra->get_distance(&ultra_attributes), xTaskGetTickCount(), pdTICKS_TO_MS(xTaskGetTickCount()));
-       
-        vTaskDelay(250 / portTICK_PERIOD_MS);
-        
-    }
-}
 
 static void manager_relay(void *arg)
 {
@@ -81,7 +69,7 @@ static void sensors_task_notify_model(void *arg)
         struct storage_device_t *storage_eeprom = storage_device_instance();
     #endif
     xTaskCreate(manager_relay, "manager_relay", 2048, NULL, 10, NULL);
-    // xTaskCreate(task_detect,"task_detect", 2048, NULL, 10, NULL);
+   
 
     for (;;)
     {
@@ -193,7 +181,7 @@ esp_err_t sensors_init(void)
         struct ultrasonic_driver_data_t ultra_attributes = ultrasonic_get_attributes();
         struct ultrasonic_driver_t *ultra = ultrasonic_driver_instance();
     #endif
-    
+  
     err_sensors = mic_device->mic_init();
     if(err_sensors != ESP_OK)
     {
@@ -249,7 +237,7 @@ esp_err_t sensors_init(void)
 
     #ifndef TESTE_I2S
 
-        err_sensors = ultra->init(&ultra_attributes);
+        err_sensors = ultra->init();
         if(err_sensors != ULTRASONIC_SUCCESS)
         {
             ESP_LOGE("SENSOR", "Falha ao inicializar o Ultrassonico");
@@ -258,8 +246,6 @@ esp_err_t sensors_init(void)
 
     #endif
 
-    
-    
     xTaskCreate(sensors_task_notify_model, "sensors_task_notify_model", 4096, NULL, 10, &sensors_data.xHandle_notify_model);
 
     

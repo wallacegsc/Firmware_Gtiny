@@ -189,7 +189,7 @@ esp_err_t eeprom_read_byte(uint8_t deviceaddress, uint16_t eeaddress, uint8_t *b
  */
 esp_err_t eeprom_read(uint8_t deviceaddress, uint32_t eeaddress, uint8_t* data, size_t size) {
     esp_err_t ret;
-    vTaskDelay(20/portTICK_PERIOD_MS);
+    vTaskDelay(10/portTICK_PERIOD_MS);
     i2c_cmd_handle_t cmd = i2c_cmd_link_create();
     
         i2c_master_start(cmd);

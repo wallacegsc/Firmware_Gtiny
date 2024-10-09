@@ -2,6 +2,9 @@
 
 struct ultrasonic_driver_t ultrasonic_driver = {0}; // estrutura de metodos
 
+esp_err_t config = ESP_FAIL;
+uint8_t force_pass = 0;
+
 /**
  * @brief instala estrutura de atributos
  * @return estrutura padrão de atributos
@@ -35,7 +38,7 @@ static void IRAM_ATTR echo_isr_callback(void *isr_echo_pin);
 static bool IRAM_ATTR ultrasonic_pwm_stop_isr_callback(void *args);
 
 
-// ENCONTRO DO THRESHOLD DO ATM===============================================
+// ENCONTRO DO THRESHOLD DO ATM ===============================================
 /**
  * @brief Coleta de dados para definição do threshold de distancia
  * @param echo_pin 
@@ -54,21 +57,145 @@ ultrasonic_status_t ultrasonic_init_threshold_distance(struct ultrasonic_driver_
         {
             i--;
             check++;
-            if(check>9)
+            if(check>9){
+                gpio_intr_disable((driver_data->u_echo_pin));
+                ledc_timer_pause(LEDC_LOW_SPEED_MODE, driver_data->u_ledc_channel);
+                timer_pause(driver_data->u_timer_group, driver_data->u_timer);
                 return ULTRASONIC_FAIL;
+            }  
             
             vTaskDelay(100/portTICK_PERIOD_MS);
             continue;
         }
-   
+    
         total_distance += distance;
         printf("a: %d\n",distance);
         vTaskDelay(100/portTICK_PERIOD_MS);
     }
-
-
+    // gpio_intr_disable((driver_data->u_echo_pin));
+    // ledc_timer_pause(LEDC_LOW_SPEED_MODE, driver_data->u_ledc_channel);
+    // timer_pause(driver_data->u_timer_group, driver_data->u_timer);
     driver_data->u_distance_threshold = total_distance/i;
+    
+    if (driver_data->u_distance_threshold < MINIMAL_DISTANCE)
+        return ULTRASONIC_FAIL;
+
     return ULTRASONIC_SUCCESS;
+}
+
+
+// TASK ULTRASSONICO
+void ultrasonic_task_get_distance(void*pvParameters)
+{   
+    struct ultrasonic_driver_data_t ultra_attributes = ultrasonic_get_attributes();
+    struct ultrasonic_driver_t *ultra = ultrasonic_driver_instance();
+    if (ultra->init_data(&ultra_attributes) == ULTRASONIC_SUCCESS)
+        config = ESP_OK;
+    else
+        force_pass = 1;
+
+    // printf("ultra_attributes->u_distance_threshold: %d\n",ultra_attributes.u_distance_threshold);
+    #ifdef SAVE_EEPROM
+        struct storage_device_t *storage_eeprom = storage_device_instance();
+        extern struct storage_data_t storage_data;
+    #endif
+
+    uint32_t log_data[4],
+             total, 
+             checksum;
+            
+    time_t tt;
+
+    uint8_t distance, 
+            in_limit = true,
+            threshold = ultra_attributes.u_distance_threshold,
+            upper_threshold = threshold + TRESHOLD_RANGE,
+            lower_threshold,
+            id_flag_log,
+            ite = 8,
+            erro;
+
+    if ( (threshold-TRESHOLD_RANGE) > MINIMAL_DISTANCE)
+        lower_threshold = threshold - TRESHOLD_RANGE;
+    else
+        lower_threshold = MINIMAL_DISTANCE;
+        
+
+    ESP_LOGI(ULTRASONIC_TAG, "Iniciando a Task"); 
+    for(;;)
+    {  
+        total = 0;
+        for(uint8_t i = 0; i<ite; i++){
+            distance = ultra->get_distance(&ultra_attributes);
+            total += distance;
+            vTaskDelay(50/portTICK_PERIOD_MS);
+        }
+
+        erro = total%ite; //Quantos valores ficaram acima da média inteira
+        if(erro>=3)
+            distance = total/ite;
+        else
+            distance = total/ite + 1;
+
+        #ifdef SHOW_ULTRA_RESULTS
+            printf("cm: %d\tticks: %d\ttempo: %d\n", distance, xTaskGetTickCount(), pdTICKS_TO_MS(xTaskGetTickCount()));
+        #endif
+
+        if(in_limit){
+            if(distance < lower_threshold || distance > upper_threshold){
+                printf("saiu\n");
+                #ifdef SAVE_EEPROM
+                    tt = time(NULL);
+                    if (tt<1704067200) //1 jan 2024 00:00 GMT
+                        tt = 0;
+
+                    if (storage_data.flag_is_inverted)  id_flag_log = flag_inverter_ultra;
+                    if (!storage_data.flag_is_inverted) id_flag_log = flag_default_ultra;
+
+                    checksum = (uint32_t) tt + (uint32_t) id_flag_log + (uint32_t) distance;
+                    
+                    log_data[0] = id_flag_log;
+                    log_data[1] = tt;
+                    log_data[2] = distance;
+                    log_data[3] = checksum;
+        
+                    xQueueSend(storage_data.save_logs_queue, log_data, 0);
+                    vTaskDelay(550/portTICK_PERIOD_MS);
+                #endif
+
+                in_limit = false;
+            }
+        }
+
+        if(!in_limit){
+            if(distance >= lower_threshold && distance <= upper_threshold){
+                printf("Entrou\n");
+                #ifdef SAVE_EEPROM
+                    tt = time(NULL);
+                    if (tt<1704067200) //1 jan 2024 00:00 GMT
+                        tt = 0;
+
+                    if (storage_data.flag_is_inverted)  id_flag_log = flag_inverter_ultra;
+                    if (!storage_data.flag_is_inverted) id_flag_log = flag_default_ultra;
+
+                    checksum = (uint32_t) tt + (uint32_t) id_flag_log + (uint32_t) distance;
+                    
+                    log_data[0] = id_flag_log;
+                    log_data[1] = tt;
+                    log_data[2] = distance;
+                    log_data[3] = checksum;
+                    
+                    xQueueSend(storage_data.save_logs_queue, log_data, 0);
+                    vTaskDelay(550/portTICK_PERIOD_MS);
+                #endif
+
+                in_limit = true;
+            }
+        }
+        
+        vTaskDelay(50 / portTICK_PERIOD_MS);
+        
+    }
 }
 
 // DEFINIÇÕES DE FUNÇÕES DE INICIALIZAÇÃO ==========================================
@@ -216,18 +343,34 @@ ultrasonic_status_t ultrasonic_pwm_init(struct ultrasonic_driver_data_t *driver_
     return ULTRASONIC_SUCCESS;
 }
 
+ultrasonic_status_t ultrasonic_init()
+{
+    xTaskCreate(ultrasonic_task_get_distance,"ultrasonic_task_get_distance", 2048, NULL,10,NULL);
+
+    while(config != ESP_OK && !force_pass)
+        vTaskDelay(10/portTICK_PERIOD_MS);
+
+    if(config == ESP_OK)
+        return ULTRASONIC_SUCCESS;
+    else
+        return ULTRASONIC_FAIL;
+} 
+
 /**
  * @brief chama funções de inicilazação do sensor ultrasonico
  * @param driver_data endereço para estrutua de atriutos dosensor ultrasonico
  * @return ultrasonic_status_t
  *
  */
-ultrasonic_status_t ultrasonic_init(struct ultrasonic_driver_data_t *driver_data)
+ultrasonic_status_t ultrasonic_init_data(struct ultrasonic_driver_data_t *driver_data)
 {
+   
     ultrasonic_status_t ultrasonic_err;
+    
     xEcho_Queue = xQueueCreate(3, sizeof(bool));
-
+   
     ultrasonic_err = ultrasonic_init_echo(&(driver_data->u_echo_pin));
+    
     if (ultrasonic_err != ESP_OK)
     {
         ESP_LOGE(ULTRASONIC_TAG, "erro ao iniciar echo\terro: %d", ultrasonic_err);
@@ -255,20 +398,25 @@ ultrasonic_status_t ultrasonic_init(struct ultrasonic_driver_data_t *driver_data
         return ULTRASONIC_FAIL;
     }
 
-    ESP_LOGI(ULTRASONIC_TAG, "Ultrassonico configurado com sucesso");
-
-    ultrasonic_err = ultrasonic_init_threshold_distance(driver_data);
-    if (ultrasonic_err != ESP_OK)
-    {
-        ESP_LOGE(ULTRASONIC_TAG, "erro ao iniciar o threshold de distancia %d | %d cm", ultrasonic_err, driver_data->u_distance_threshold);
-        // return ULTRASONIC_FAIL;
-    }
-    else
-        ESP_LOGI(ULTRASONIC_TAG, "Threshold do ultrassonico em %d cm", driver_data->u_distance_threshold);
- 
+      
+    ESP_LOGI(ULTRASONIC_TAG, "Ultrassonico configurado com sucesso"); 
+    #ifdef TRESHOLD_ULTRA
+        driver_data->u_distance_threshold = TRESHOLD_ULTRA;
+    #else
+        ultrasonic_err = ultrasonic_init_threshold_distance(driver_data);
+        if (ultrasonic_err != ESP_OK)
+        {
+            ESP_LOGE(ULTRASONIC_TAG, "erro ao iniciar o threshold de distancia %d | %d cm", ultrasonic_err, driver_data->u_distance_threshold);
+            return ULTRASONIC_FAIL;
+        }
+        else{
+            ESP_LOGI(ULTRASONIC_TAG, "Threshold do ultrassonico em %d cm", driver_data->u_distance_threshold); 
+        }
+    #endif
+    
+    
     return ULTRASONIC_SUCCESS;
 }
-
 
 // DEFINIÇÕES DE FUNÇÕES DE OPERAÇÃO ===============================================
 /**
@@ -410,6 +558,7 @@ struct ultrasonic_driver_t *ultrasonic_driver_instance()
     {
         ultrasonic_driver = (struct ultrasonic_driver_t){
             .init = &ultrasonic_init,
+            .init_data = &ultrasonic_init_data,
             .get_distance = &ultrasonic_get_distance,
         };
     }

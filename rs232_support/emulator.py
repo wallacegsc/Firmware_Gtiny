@@ -21,7 +21,7 @@ cmd = ['C07']
 
 key = b'abcdefghijklmnop'
 
-s = serial.Serial(port='COM6',
+s = serial.Serial(port='COM7',
                   baudrate=115200,
                   bytesize=serial.EIGHTBITS,
                   parity=serial.PARITY_NONE,
@@ -122,7 +122,9 @@ for req in cmd:
                
             elif msg[n] == 163 or msg[n] == 175:
                type_log = 'Event'
-               if (msg[n+5] & 0x01) == 0:
+               if ( (((msg[n+5] & 0x01) == 0)) & (( (msg[n+5] >> 4) & 0x01) == 0) ):
+                  class_log = 'Case/IR'
+               elif (msg[n+5] & 0x01) == 0:
                   class_log = 'Case'
                elif ( (msg[n+5] >> 4) & 0x01) == 0:
                   class_log = 'IR'
@@ -132,6 +134,11 @@ for req in cmd:
                   class_log = 'Ir conectado'
                else:
                   class_log = '0'
+
+            elif msg[n] == 161 or msg[n] == 173:
+               type_log = 'Ultra'
+               class_log = str(msg[n+5])
+
 
             else:
                type_log = '0'
@@ -162,6 +169,7 @@ for req in cmd:
          #    info[key].reverse()
          df = pd.DataFrame(info)
          df.to_csv("log_info.csv", index=False)
+         print("Escreveu csv")
 
 
 

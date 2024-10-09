@@ -35,6 +35,6 @@ void HandleOutput_format(tflite::ErrorReporter* error_reporter, std::vector<floa
   *class_index_detection = (uint8_t) class_index;
   //std::cout << "Index: " << ataque_class_index << std::endl;
 
-  // printf("%f, %f, %f, %d, %f, %d\n", saida[0], saida[1],saida[2], relay, conf, class_index);
+  printf("%f, %f, %f, %d, %f, %d\n", saida[0], saida[1],saida[2], relay, conf, class_index);
 
 }

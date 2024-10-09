@@ -50,29 +50,36 @@ static void mcp_task_notify_irq(void *arg)
     
     uint32_t io_num;
 
-    uint8_t registerGpioA[8];
-    uint8_t registerGpioAState[8];
-    uint8_t read;
+    uint8_t registerGpioA[8], registerGpioB[8];
+    uint8_t registerGpioAState[8], registerGpioBState[8];
+    uint8_t readA, readB;
     //mcp_driver->read_pin_mcp(GPIOA, P0, &readMcp);
-    mcp_driver->read_group_mcp(GPIOA, &read);
+    mcp_driver->read_group_mcp(GPIOA, &readA);
+    mcp_driver->read_group_mcp(GPIOB, &readB);
     for (size_t i = 0; i < 8; i++)
     {
-        registerGpioA[i] = (read >> i) & 0x01;
-        registerGpioAState[i] = (read >> i) & 0x01;
+        registerGpioA[i] = (readA >> i) & 0x01;
+        registerGpioAState[i] = (readA >> i) & 0x01;
+
+        registerGpioB[i] = (readB >> i) & 0x01;
+        registerGpioBState[i] = (readB >> i) & 0x01;
     }
+
     
     for (;;)
     {
-        mcp_driver->read_group_mcp(GPIOA, &read);
+        
         if (xQueueReceive(mcp_irq_evt_queue, &io_num, pdMS_TO_TICKS(10)))
         {
            
             //mcp_driver->read_group_mcp(INTCAPA, &read);
-            mcp_driver->read_group_mcp(GPIOA, &read);
+            mcp_driver->read_group_mcp(GPIOA, &readA);
+            mcp_driver->read_group_mcp(GPIOB, &readB);
          
             for (size_t i = 0; i < 8; i++)
             {
-                registerGpioA[i] = (read >> i) & 0x01;
+                registerGpioA[i] = (readA >> i) & 0x01;
+                registerGpioB[i] = (readB >> i) & 0x01;
             }
         
             //DET_CASE
@@ -99,13 +106,13 @@ static void mcp_task_notify_irq(void *arg)
                 registerGpioAState[3] = registerGpioA[3];
             }
 
-            //DET_GPIO_EM_5
+            //DET_GPIO_EM_4
             if (registerGpioAState[4] != registerGpioA[4])
             {
                 registerGpioAState[4] = registerGpioA[4];
             }
 
-            //DET_GPIO_EM_4
+            //DET_GPIO_EM_5
             if (registerGpioAState[5] != registerGpioA[5])
             {
                 registerGpioAState[5] = registerGpioA[5];
@@ -123,13 +130,21 @@ static void mcp_task_notify_irq(void *arg)
                 registerGpioAState[7] = registerGpioA[7];
             }
 
-            
+            //DET MIC
+            if (registerGpioBState[6] != registerGpioB[6])
+            {
+                registerGpioBState[6] = registerGpioB[6];
+            }
+             
             #ifdef SAVE_EEPROM
             // case baixo 
             // p0 p7 e p4
-            // if (registerGpioA[0] == 1 )//|| registerGpioA[4] == 1
-            // {
+            if (registerGpioAState[0] == 1 || 
+                registerGpioAState[4] == 1  
+                                            )//registerGpioBState[6] == 1(MIC) 
+            {
                 printf("event \n");
+                
                 //LOG NA EEPROM SOBRE O EVENTO
                 uint32_t log_data[4], checksum;
                 uint8_t id_flag_log;
@@ -155,11 +170,12 @@ static void mcp_task_notify_irq(void *arg)
                 log_data[3] = checksum;
 
                 xQueueSend(storage_data.save_logs_queue, log_data, 0);
+            
             }
-                
             #endif
+            // mcp_driver->read_group_mcp(GPIOA, &read);
         }
-    // }
+    }
 }
 
 int mcp_register_irq(void)
@@ -206,21 +222,29 @@ esp_err_t register_interrupt(void){
     
     uint8_t read_IOCON;
     uint8_t receive;
-    uint8_t receivegpa;
+    uint8_t receivegpa, receivegpb;
+
+    //Mirror beetwen INTA and INTB
+    mcp_driver->write_pin_mcp(IOCONA, P6, HIGH);
+
+    //Interrupt MIC_DISCONECT
+    mcp_driver->mode_mcp(IODIRB, P6, INPUT);
+    mcp_driver->write_pin_mcp(GPINTENB, P6, HIGH);
+    mcp_driver->write_pin_mcp(INTCONB, P6, LOW);
+    mcp_driver->write_pin_mcp(DEFVALB, P6, LOW);
 
     //Interrupt DET_ENG
     mcp_driver->mode_mcp(IODIRA, P7,INPUT);
     mcp_driver->write_pin_mcp(GPINTENA, P7, HIGH);
-    mcp_driver->write_pin_mcp(INTCONA, P7, HIGH);
+    mcp_driver->write_pin_mcp(INTCONA, P7, LOW);
     mcp_driver->write_pin_mcp(DEFVALA, P7, LOW);
     
-
     //Interrupt GPIO_CASE
     mcp_driver->mode_mcp(IODIRA, P0, INPUT);
     mcp_driver->write_pin_mcp(GPINTENA, P0, HIGH);
-    mcp_driver->write_pin_mcp(INTCONA, P0, HIGH);
+    mcp_driver->write_pin_mcp(INTCONA, P0, LOW);
     mcp_driver->write_pin_mcp(DEFVALA, P0, LOW);
-    
+  
     #ifndef PLACA_CONCENTRADORA
         printf("Placa distribuidora \n");
         //Interrupt DET_GPIO6
@@ -269,12 +293,12 @@ esp_err_t register_interrupt(void){
         printf("Placa concentradora \n");
         mcp_driver->mode_mcp(IODIRA, P4,INPUT);
         mcp_driver->write_pin_mcp(GPINTENA, P4, HIGH);
-        mcp_driver->write_pin_mcp(INTCONA, P4, HIGH);
+        mcp_driver->write_pin_mcp(INTCONA, P4, LOW);
         mcp_driver->write_pin_mcp(DEFVALA, P4, LOW);
         mcp_driver->write_pin_mcp(GPPUA, P4, HIGH);
 
     #endif
-
+    
     if(i2c_controller->i2c_read_8b(MCP_I2C_MACHINE, MCP_I2C_ADDRESS, IOCONA, &read_IOCON) != ESP_OK) return ESP_FAIL;
 
     printf("104\n");
@@ -286,6 +310,8 @@ esp_err_t register_interrupt(void){
     else{
         i2c_controller->i2c_read_8b(MCP_I2C_MACHINE, MCP_I2C_ADDRESS, GPIOA, &receivegpa);
         printf("Lendo valor em GPIOA: 0x%X\n", receivegpa);
+        i2c_controller->i2c_read_8b(MCP_I2C_MACHINE, MCP_I2C_ADDRESS, GPIOA, &receivegpb);
+        printf("Lendo valor em GPIOB: 0x%X\n", receivegpb);
     }
 
     return ESP_OK;
@@ -301,7 +327,7 @@ esp_err_t mcp_driver_init(void){
         ESP_LOGE("MCP23018", "Falha na comunicação");
         return ESP_FAIL;
     }
-    if(mcp_address != ALL_SET)
+    if(mcp_address != ALL_SET && mcp_address != 0x00)
     {
         ESP_LOGE("MCP23018", "Dispositivo não encontrado");
         return ESP_FAIL;

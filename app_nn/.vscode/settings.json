@@ -36,7 +36,17 @@
     "bitset": "c",
     "regex": "c",
     "string": "c",
-    "freertos.h": "c"
+    "freertos.h": "c",
+    "esp_err.h": "c",
+    "eeprom.h": "c",
+    "sha256.h": "c",
+    "iterator": "c",
+    "esp_system.h": "c",
+    "gpio.h": "c",
+    "task.h": "c",
+    "stat.h": "c",
+    "types.h": "c",
+    "dir.h": "c"
   },
   "idf.adapterTargetName": "esp32",
   "C_Cpp.default.compilerPath": "C:\\MinGW\\bin\\gcc.exe",

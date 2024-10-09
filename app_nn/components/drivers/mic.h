@@ -6,7 +6,7 @@
 #include "main_functions.h"
 
 #define NUM_SAMPLES_RECORDED 16000
-
+#define SDCARD_CS_PIN GPIO_NUM_15
 struct mic_driver_data_t
 {
     struct i2s_controller_data_t *mic_i2s_data;
