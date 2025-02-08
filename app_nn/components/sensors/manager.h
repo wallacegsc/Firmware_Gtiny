@@ -3,6 +3,13 @@
 
 #include "sensors.h"
 
+#define GUARDIAO_TINY_4_0
+
+#ifdef GUARDIAO_TINY_4_0
+    #define HW_VERSION "GUARDIAO_ESP_V4.0"
+    #define FW_VERSION "1.0"
+#endif
+
 struct manager_data_t
 {
     

@@ -119,6 +119,36 @@ void minor_send(uint16_t size_remaining_logs,
     serial_uart_write((char *)(buffer_uart+ i), size_remaining_logs - i);
 }
 
+void __response_EEPROM_RESTART(void){
+    reset_memory();
+
+    unsigned char response_output[5] = {0};
+    unsigned char response_input[5] = {0};
+    unsigned char buffer_uart[21] = {0};
+
+    response_input[0] = 'P';
+    response_input[1] = '0';
+    response_input[2] = '1';
+    response_input[3] = 1;
+    response_input[4] = 0;
+    
+    for (size_t i = 0; i < 16; i++)
+    {
+        key_iv[i] = key_iv_buffer[i];
+        buffer_uart[i] = key_iv_buffer[i];
+    }
+
+    mbedtls_aes_crypt_cfb8(&aes, MBEDTLS_AES_ENCRYPT, INPUT_LENGTH_RES, key_iv, response_input, response_output);
+    
+    for (size_t i = 0; i < 5; i++)
+    {
+        buffer_uart[i+16] = response_output[i];
+    }
+    
+
+    serial_uart_write((char *)buffer_uart, 21);
+}
+
 void response_c01()
 {
     unsigned char response_output[5] = {0};
@@ -272,10 +302,14 @@ void response_c05()
     packet_t packet;
 
     update_partition = esp_ota_get_next_update_partition(NULL);
-    assert(update_partition != NULL);
+    if (update_partition == NULL){
+        ESP_LOGE(TAG, "esp_ota_get_next_update_partition failed: NULL");
+        uart_write_bytes(UART_NUM_1, "R05PF", 5);
+        return;
+    }
     ESP_LOGI(TAG, "Writing to partition subtype %d at offset 0x%x", update_partition->subtype, update_partition->address);
     
-    uart_write_bytes(UART_NUM_1, "OK", 2);
+    uart_write_bytes(UART_NUM_1, "R05PP", 5);
     
 
     for(;;)
@@ -288,17 +322,26 @@ void response_c05()
             if (err != ESP_OK) {
                 ESP_LOGE(TAG, "esp_ota_begin failed (%s)", esp_err_to_name(err));
                 esp_ota_abort(update_handle);
+                uart_write_bytes(UART_NUM_1, "R05BF", 5);
                 esp_restart();
             }
             
             ESP_LOGI(TAG, "esp_ota_begin succeeded");
             printf("Size_firm: %d\n",packet.firm_size);
-            uart_write_bytes(UART_NUM_1, "OBP", 3);
-
+            uart_write_bytes(UART_NUM_1, "R05BP", 5);
+            uint8_t checks = 0;
             for(;;)
             {
-                rxBytes = uart_read_bytes(UART_NUM_1, ota_write_data, 1024, 1000 / portTICK_PERIOD_MS);  
+                rxBytes = uart_read_bytes(UART_NUM_1, ota_write_data, 1024, 1000 / portTICK_PERIOD_MS);
+                checks++;
+                if(checks >= 5){
+                    ESP_LOGI(TAG, "Time out");
+                    esp_ota_abort(update_handle);
+                    uart_write_bytes(UART_NUM_1, "R05TF", 5);
+                    esp_restart();
+                }  
                 if (rxBytes > 0) {
+                    checks = 0;
                     checksum = 0;
                     if(rxBytes>1023){
                         for(int i = 4; i<1024; i++)
@@ -316,15 +359,17 @@ void response_c05()
 
                     if (checksum!=checksum_recieve_data)
                     {
+                        ESP_LOGI(TAG, "CS fail");
                         esp_ota_abort(update_handle);
-                        uart_write_bytes(UART_NUM_1, "CSF", 3);
+                        uart_write_bytes(UART_NUM_1, "R05CF", 5);
                         esp_restart();
                     }
 
                     err = esp_ota_write( update_handle, (const void *) (ota_write_data+4), rxBytes-4);
                     if (err != ESP_OK) {
+                        ESP_LOGI(TAG, "OTA write fail");
                         esp_ota_abort(update_handle);
-                        uart_write_bytes(UART_NUM_1, "OWF", 3);
+                        uart_write_bytes(UART_NUM_1, "R05WF", 5);
                         esp_restart();
                         
                     }
@@ -332,10 +377,10 @@ void response_c05()
                     //ESP_LOGI(TAG, "Written image length %d", binary_file_length);
                     if (binary_file_length >= packet.firm_size)
                     {
-                        uart_write_bytes(UART_NUM_1, "R05", 3);
+                        uart_write_bytes(UART_NUM_1, "R05OK", 5);
                         break;
                     }
-                    uart_write_bytes(UART_NUM_1, "R05", 3);
+                    uart_write_bytes(UART_NUM_1, "R05OK", 5);
                 } 
             
             }
@@ -353,15 +398,17 @@ void response_c05()
         } else {
             ESP_LOGE(TAG, "esp_ota_end failed (%s)!", esp_err_to_name(err));
         }
+        uart_write_bytes(UART_NUM_1, "R05EF", 5);
         esp_restart();
     }
 
     err = esp_ota_set_boot_partition(update_partition);
     if (err != ESP_OK) {
         ESP_LOGE(TAG, "esp_ota_set_boot_partition failed (%s)!", esp_err_to_name(err));
+        uart_write_bytes(UART_NUM_1, "R05SF", 5);
         esp_restart();
     }
-
+    uart_write_bytes(UART_NUM_1, "R05CP", 5);
     ESP_LOGI(TAG, "Prepare to restart system!");
     esp_restart();
     
@@ -374,7 +421,7 @@ void response_c06()
     
     uint8_t* data_timestamp = (uint8_t*) malloc(21);
     //É preciso de um delay de 0.1 s no envio do tt para que o sistema esteja pronto para ler
-    uart_write_bytes(UART_NUM_1, "OK", 2);
+    uart_write_bytes(UART_NUM_1, "R06OK", 5);
     const int rxBytes_timestamp = uart_read_bytes(UART_NUM_1, data_timestamp, 20, 2000 / portTICK_PERIOD_MS);
         if (rxBytes_timestamp > 0) {
             data_timestamp[rxBytes_timestamp] = 0;
@@ -422,7 +469,7 @@ void response_c06()
             }            
 
             printf("ts interno atualizado - %ld \n", time(NULL));
-            uart_write_bytes(UART_NUM_1, "TOK", 3);
+            uart_write_bytes(UART_NUM_1, "R06TP", 5);
 
         }
         free(data_timestamp);
@@ -444,7 +491,7 @@ void response_c07()
             *response_input =  (uint8_t*) malloc(MAX_SIZE + 1);
     unsigned char buffer_uart[MAX_SIZE + 1];
 
-    qnt_returned = storage_eeprom->check_num_logs(&num_logs_disp, 200);
+    qnt_returned = storage_eeprom->check_num_logs(&num_logs_disp, LOGS_TO_RETURN);
     size_logs_disp = num_logs_disp*SIZE_LOG;
 
     address = 0;
@@ -512,6 +559,7 @@ void response_c07()
             minor_send(remaining_logs * SIZE_LOG, response_input, response_output, address, buffer_uart, storage_eeprom);
         }
 
+        address = 0;
         if (num_logs_disp > storage_data.pos_recent_log/SIZE_LOG)
         {
             max_add = size_final_logs/MAX_SIZE;
@@ -621,6 +669,14 @@ static void serial_uart_read(void *arg)
                          RSA_test();
                     }
                     
+                }
+            }
+            
+            else if(output_serial[0] == 'P'){
+                if (output_serial[1] == '0') {
+                    if (output_serial[2] == '1'){
+                        __response_EEPROM_RESTART();
+                    }
                 }
             }
         }

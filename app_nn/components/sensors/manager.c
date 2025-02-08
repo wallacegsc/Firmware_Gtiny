@@ -6,7 +6,8 @@ struct manager_t manager;
 esp_err_t manager_init(void)
 {
     struct sensors_t *sensors_guardian = sensors_instance();
-    
+    printf("\n");
+    ESP_LOGI("VERSION","HW: %s FW: %s", HW_VERSION, FW_VERSION);
     sensors_guardian->sensors_init();
 
     while(1)

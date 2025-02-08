@@ -151,7 +151,7 @@ int acc_register_irq(void)
     // create a queue to handle gpio event from isr
     acc_driver_data.acc_irq_evt_queue = xQueueCreate(10, sizeof(uint32_t));
     // start gpio task
-    xTaskCreate(acc_task_notify_irq, "acc_task_notify_irq", 2048, NULL, 10, acc_driver_data.xHandle_acc);
+    xTaskCreate(acc_task_notify_irq, "acc_task_notify_irq", 2048, NULL, 10, &acc_driver_data.xHandle_acc);
 
     // install gpio isr service
     esp_err_t err = gpio_install_isr_service(ESP_INTR_FLAG_LEVEL3);

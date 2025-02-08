@@ -326,7 +326,7 @@ esp_err_t mcp_driver_init(void){
     {
         ESP_LOGE("MCP23018", "Falha na comunicação");
         return ESP_FAIL;
-    }
+    } 
     if(mcp_address != ALL_SET && mcp_address != 0x00)
     {
         ESP_LOGE("MCP23018", "Dispositivo não encontrado");

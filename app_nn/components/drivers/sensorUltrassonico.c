@@ -69,7 +69,7 @@ ultrasonic_status_t ultrasonic_init_threshold_distance(struct ultrasonic_driver_
         }
     
         total_distance += distance;
-        printf("a: %d\n",distance);
+        // printf("a: %d\n",distance);
         vTaskDelay(100/portTICK_PERIOD_MS);
     }
     // gpio_intr_disable((driver_data->u_echo_pin));
@@ -91,8 +91,11 @@ void ultrasonic_task_get_distance(void*pvParameters)
     struct ultrasonic_driver_t *ultra = ultrasonic_driver_instance();
     if (ultra->init_data(&ultra_attributes) == ULTRASONIC_SUCCESS)
         config = ESP_OK;
-    else
+    else{
+        ESP_LOGE(ULTRASONIC_TAG, "Deletando task ultrasoonico");
         force_pass = 1;
+        vTaskDelete(NULL);   
+    }
 
     // printf("ultra_attributes->u_distance_threshold: %d\n",ultra_attributes.u_distance_threshold);
     #ifdef SAVE_EEPROM
@@ -102,7 +105,9 @@ void ultrasonic_task_get_distance(void*pvParameters)
 
     uint32_t log_data[4],
              total, 
-             checksum;
+             checksum,
+             on_limit_time = 0,
+             off_limit_time = 0;
             
     time_t tt;
 
@@ -141,54 +146,64 @@ void ultrasonic_task_get_distance(void*pvParameters)
             printf("cm: %d\tticks: %d\ttempo: %d\n", distance, xTaskGetTickCount(), pdTICKS_TO_MS(xTaskGetTickCount()));
         #endif
 
-        if(in_limit){
-            if(distance < lower_threshold || distance > upper_threshold){
-                printf("saiu\n");
-                #ifdef SAVE_EEPROM
-                    tt = time(NULL);
-                    if (tt<1704067200) //1 jan 2024 00:00 GMT
-                        tt = 0;
-
-                    if (storage_data.flag_is_inverted)  id_flag_log = flag_inverter_ultra;
-                    if (!storage_data.flag_is_inverted) id_flag_log = flag_default_ultra;
-
-                    checksum = (uint32_t) tt + (uint32_t) id_flag_log + (uint32_t) distance;
-                    
-                    log_data[0] = id_flag_log;
-                    log_data[1] = tt;
-                    log_data[2] = distance;
-                    log_data[3] = checksum;
+        // Para não encher a EEPROM -> Não salva com uma variação no limiar, atualiza os timers sempre que entra/sai e só salva o log quando ficou TEMPO SUFICIENTE DENTRO/FORA. 
         
-                    xQueueSend(storage_data.save_logs_queue, log_data, 0);
-                    vTaskDelay(550/portTICK_PERIOD_MS);
-                #endif
+        if(in_limit){
+            //Saiu do limite
+            if(distance < lower_threshold || distance > upper_threshold){
+                printf("Out\n");
+                tt = time(NULL);
+                off_limit_time = tt; //Time que saiu
+                //Quanto tempo ele ficou dentro do limite
+                if ( (tt - on_limit_time) > SECONDS_OVER_VARIATION_ULTRASSONIC){
+                    #ifdef SAVE_EEPROM 
+                        if (tt<1704067200) //1 jan 2024 00:00 GMT
+                            tt = 0;
 
+                        if (storage_data.flag_is_inverted)  id_flag_log = flag_inverter_ultra;
+                        if (!storage_data.flag_is_inverted) id_flag_log = flag_default_ultra;
+
+                        checksum = (uint32_t) tt + (uint32_t) id_flag_log + (uint32_t) distance;
+                        
+                        log_data[0] = id_flag_log;
+                        log_data[1] = tt;
+                        log_data[2] = distance;
+                        log_data[3] = checksum;
+            
+                        xQueueSend(storage_data.save_logs_queue, log_data, 0);
+                        vTaskDelay(550/portTICK_PERIOD_MS);
+                    #endif
+                }
                 in_limit = false;
             }
         }
 
         if(!in_limit){
+            //Entrou no limte
             if(distance >= lower_threshold && distance <= upper_threshold){
-                printf("Entrou\n");
-                #ifdef SAVE_EEPROM
-                    tt = time(NULL);
-                    if (tt<1704067200) //1 jan 2024 00:00 GMT
-                        tt = 0;
+                printf("In\n");
+                tt = time(NULL);
+                on_limit_time = tt; //Time que entrou
+                //Quanto tempo ele ficou fora do limite
+                if ( (tt - off_limit_time) > SECONDS_OVER_VARIATION_ULTRASSONIC){
+                    #ifdef SAVE_EEPROM
+                        if (tt<1704067200) //1 jan 2024 00:00 GMT
+                            tt = 0;
 
-                    if (storage_data.flag_is_inverted)  id_flag_log = flag_inverter_ultra;
-                    if (!storage_data.flag_is_inverted) id_flag_log = flag_default_ultra;
+                        if (storage_data.flag_is_inverted)  id_flag_log = flag_inverter_ultra;
+                        if (!storage_data.flag_is_inverted) id_flag_log = flag_default_ultra;
 
-                    checksum = (uint32_t) tt + (uint32_t) id_flag_log + (uint32_t) distance;
-                    
-                    log_data[0] = id_flag_log;
-                    log_data[1] = tt;
-                    log_data[2] = distance;
-                    log_data[3] = checksum;
-                    
-                    xQueueSend(storage_data.save_logs_queue, log_data, 0);
-                    vTaskDelay(550/portTICK_PERIOD_MS);
-                #endif
-
+                        checksum = (uint32_t) tt + (uint32_t) id_flag_log + (uint32_t) distance;
+                        
+                        log_data[0] = id_flag_log;
+                        log_data[1] = tt;
+                        log_data[2] = distance;
+                        log_data[3] = checksum;
+                        
+                        xQueueSend(storage_data.save_logs_queue, log_data, 0);
+                        vTaskDelay(550/portTICK_PERIOD_MS);
+                    #endif
+                }
                 in_limit = true;
             }
         }
@@ -346,10 +361,8 @@ ultrasonic_status_t ultrasonic_pwm_init(struct ultrasonic_driver_data_t *driver_
 ultrasonic_status_t ultrasonic_init()
 {
     xTaskCreate(ultrasonic_task_get_distance,"ultrasonic_task_get_distance", 2048, NULL,10,NULL);
-
-    while(config != ESP_OK && !force_pass)
+    while( (config != ESP_OK) && (!force_pass))
         vTaskDelay(10/portTICK_PERIOD_MS);
-
     if(config == ESP_OK)
         return ULTRASONIC_SUCCESS;
     else

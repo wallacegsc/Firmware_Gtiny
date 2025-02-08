@@ -16,7 +16,7 @@ print("Comando Enviado {} | type: {} ".format(cmd[0], type(cmd[0])))
 
 key = b'abcdefghijklmnop'
 
-s = serial.Serial(port='COM7',
+s = serial.Serial(port='COM28',
                   baudrate=115200,
                   bytesize=serial.EIGHTBITS,
                   parity=serial.PARITY_NONE,
@@ -37,12 +37,14 @@ crypt_answer = iv + cipher.encrypt(b'C05')
 s.write(crypt_answer)
 
 try:
-   response = s.read(2) 
+   response = s.read(5) 
    
 except Exception:
    print('Nao recebeu')
    exit(0)
-if response!=b'OK':
+if response == b'R05PF':
+      raise Exception("Falha ao inicializar a nova partição")
+elif response!=b'R05PP':
       raise Exception("Falha ao chamar a requisição")
 
 
@@ -51,12 +53,15 @@ size_firm_char = struct.pack("I", size_firm)
 s.write(size_firm_char)
 
 try:
-   response = s.read(3) 
+   response = s.read(5) 
    
 except Exception:
    print('Nao recebeu')
    exit(0)
-if response!=b'OBP':
+
+if response == b'R05BF':
+      raise Exception("Guardião: OTA Begin fail")
+elif response!=b'R05BP':
       raise Exception("OTA Begin fail")
 
 
@@ -64,21 +69,26 @@ if response!=b'OBP':
 size_packet = 1020
 
 for offset in tqdm.tqdm(range(0, size_firm - size_packet, size_packet), desc="Embarcando", unit=" Pacote"):
-   # print(offset)
+
    checksum = sum(read_data[offset : offset + size_packet])
    s.write(struct.pack("I", checksum))
    s.write(read_data[offset : offset + size_packet])
    try:
-      response = s.read(3) 
+      response = s.read(5) 
       # print("response:",response)
    except Exception:
       print('Nao recebeu')
       exit(0)
-
-   if response==b'CSF':
+   if response==b'R05OK':
+      continue
+   elif response==b'R05TF':
+      raise Exception("Gurdião: Timeout")
+   elif response==b'R05CF':
       raise Exception("Checksum falhou")
-   if response!=b'R05':
-      raise Exception("O Guardião não respondeu")
+   elif response==b'R05WF':
+      raise Exception("OTA write falhou")
+   else:
+      raise Exception("O Guardião não respondeu de acordo com o protocolo")
 
 
 if (size_firm%size_packet != 0):
@@ -86,11 +96,26 @@ if (size_firm%size_packet != 0):
    s.write(struct.pack("I", checksum))
    s.write(read_data[-(size_firm%size_packet):])
    try:
-      response = s.read(3) 
+      response = s.read(5) 
    except Exception:
       print('Nao recebeu')
       exit(0)
    
-   if response!=b'R05':
+   if response!=b'R05OK':
       raise Exception("O Guardião não respondeu")
+   
+try:
+   response = s.read(5) 
+except Exception:
+   print('Nao recebeu')
+   exit(0)
+if response==b'R05CP':
+   print("Sucesso: Reiniciando o sistema")
+elif response==b'R05EF':
+   raise Exception("OTA end fail")
+elif response==b'R05SF':
+   raise Exception("OTA set fail")
+   
+   
+
 

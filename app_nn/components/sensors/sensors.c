@@ -171,6 +171,7 @@ static void sensors_task_notify_model(void *arg)
  */
 esp_err_t sensors_init(void)
 {    
+    
     esp_err_t err_sensors;
     struct mic_driver_t *mic_device = mic_driver_instance();
 
@@ -241,7 +242,7 @@ esp_err_t sensors_init(void)
         if(err_sensors != ULTRASONIC_SUCCESS)
         {
             ESP_LOGE("SENSOR", "Falha ao inicializar o Ultrassonico");
-            return ESP_FAIL;
+            // return ESP_FAIL;
         }
 
     #endif

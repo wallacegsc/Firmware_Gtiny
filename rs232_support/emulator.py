@@ -15,13 +15,14 @@ except Exception as erro:
     exit(0)
 
 
-cmd = ['C07']
+cmd = ['P01','C01','C02','C03','C04','C06','C07']
+cmd = ['C06','C07']
 #cmd = ['C04']
 # print("Comando Enviado {} | type: {} ".format(cmd[0], type(cmd[0])))
 
 key = b'abcdefghijklmnop'
 
-s = serial.Serial(port='COM7',
+s = serial.Serial(port='COM5',
                   baudrate=115200,
                   bytesize=serial.EIGHTBITS,
                   parity=serial.PARITY_NONE,
@@ -39,15 +40,16 @@ for req in cmd:
 
    if req == 'C06':
       try:
-         response = s.read(2) 
-         # print("response:",response)
+         response = s.read(5) 
+         print("response:",response)
       except Exception:
          print('Nao recebeu o OK para o timestamp')
          exit(0)
-      if response!=b'OK':
+      if response!=b'R06OK':
          raise Exception("Recebeu uma resposta errada para a preparação do timestamp")
       print("Msg enviada: %s | Criptografada: %s" % (send_cmd, crypt_answer))
       data_timestamp = int(time.time()) # byte1 byte2 byte3 byte4  (mais -> menos) significativo
+      print(data_timestamp)
       byte1 = chr((data_timestamp >> 24) & 0xFF)
       byte2 = chr((data_timestamp >> 16) & 0xFF)
       byte3 = chr((data_timestamp >> 8) & 0xFF)
@@ -60,12 +62,12 @@ for req in cmd:
       s.write(crypt_answer)
       
       try:
-         response = s.read(3) 
+         response = s.read(5) 
          # print("response:",response)
       except Exception:
          print('Atualização do timestamp falhou')
          exit(0)
-      if response!=b'TOK':
+      if response!=b'R06TP':
          raise Exception("Recebeu uma resposta errada para a atualização do timestamp")
       print('Timestamp atualizado\n')
       continue

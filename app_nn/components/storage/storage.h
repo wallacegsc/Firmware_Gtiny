@@ -3,6 +3,7 @@
 #include "eeprom.h"
 #include "time.h"
  
+#define SAVE_EEPROM 1
 // #define RESET_M
 // #define MEMORY_INFO
 #define CHECK_SAVE
@@ -14,11 +15,13 @@
 #define EVENT_2 2
 #define EVENT_3 3
 #define EVENT_4 4
-#define SAVE_EEPROM 1
+
+//LOGS: 1 FLAG BYTE | 4 TT BYTE | 1 DATA BYTE | 4 CHECKSUM BYTE
 
 #define ZERO_LOGS 0 //Sem logs na EEPROM
 #define DEFAULT  1 
 #define PART_LOGS_FULL 2//Uma parte com a memória cheia
+#define LOGS_TO_RETURN MAX_LOGS
 
 #define SIZE_LOG 10
 #define MAX_SEND_LOGS 250 // Quantidade de logs que podem ser carregados de uma vez dado a RAM do ESP32 
@@ -46,6 +49,11 @@
 // inverter 
 // Flag identif.> 1010xxxx
 
+#define FLAG_IS_DEFAULT(value) value == flag_default_relay || value == flag_default_event || value == flag_default_ultra
+#define FLAG_IS_INVERT(value) value == flag_inverter_relay || value == flag_inverter_event || value == flag_inverter_ultra
+#define UPDATE_STRUCT_STORAGE(old,recent,manager,is_full) storage_data.pos_old_log = old; storage_data.pos_recent_log = recent;  storage_data.manager_eeprom = manager;  storage_data.memory_full = is_full;
+                       
+                       
 struct storage_data_t
 {
     QueueHandle_t save_logs_queue;
@@ -81,6 +89,8 @@ struct storage_device_t
     check_num_logs_t check_num_logs;
    
 };
+
+void reset_memory();
 
 struct storage_device_t *storage_device_instance();
 
