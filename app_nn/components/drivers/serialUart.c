@@ -3,7 +3,6 @@
 #include "storage.h"
 #include <sys/time.h>
 #include "esp_ota_ops.h"
-#include "RSA.c"
 
 #define BUF_SIZE 1024
 #define INPUT_LENGTH 3
@@ -14,6 +13,8 @@ struct serialUart_driver_data_t *serialUart_driver_data = &serialUart_data_drive
 struct serialUart_driver_t serialUart_driver;
 
 mbedtls_aes_context aes;
+
+unsigned char ivTest[16] = {0xA3, 0xF1, 0xC7, 0x92, 0x4B, 0x8D, 0xE5, 0x6F, 0x13, 0x29, 0x7A, 0xD4, 0xBF, 0x5E, 0x88, 0x1C};
 
 unsigned char key[16] = {0x61, 0x62, 0x63, 0x64, 0x65, 0x66, 0x67, 0x68, 0x69, 0x6A, 0X6B, 0x6C, 0x6D, 0x6E, 0x6F, 0x70}; //"abcdefghijklmnop";
 unsigned char key_iv[16] = {};
@@ -117,6 +118,58 @@ void minor_send(uint16_t size_remaining_logs,
     for (; (i + 2000) <  size_remaining_logs; i += 2000)
         serial_uart_write(((char *)buffer_uart+i), 2000);
     serial_uart_write((char *)(buffer_uart+ i), size_remaining_logs - i);
+}
+
+void __crip_teste(){
+    #define SIZE_TEST 7
+    #define SIZE_KEY 16
+    #define SIZE_BUF SIZE_KEY + SIZE_TEST
+    unsigned char bufferTest[SIZE_TEST + 1] = {'D','I','E','B','O','L','D'},
+                  bufferEnd[SIZE_TEST + 1],  
+                  response_output[SIZE_TEST],
+                  buffer_uart[SIZE_BUF];
+    
+    printf("Dado base:\n");
+    printf("\"%s\"\n",bufferTest);
+    for(uint8_t i = 0; i < SIZE_TEST; i++){
+        printf("%x ", bufferTest[i]);
+    }
+    printf("\n");
+    printf("Buffer:\n");
+    for(size_t i = 0; i < 16; i++){
+        key_iv_buffer[i] = ivTest[i];
+        buffer_uart[i] = ivTest[i];
+        printf("%x ", buffer_uart[i]);
+    }
+
+    mbedtls_aes_crypt_cfb8(&aes, MBEDTLS_AES_ENCRYPT, SIZE_TEST, key_iv_buffer, bufferTest, response_output);
+
+    for (size_t i = SIZE_KEY; i < SIZE_BUF; i++)
+    {
+        buffer_uart[i] = response_output[i - SIZE_KEY];
+        printf("%x ", buffer_uart[i]);
+    }
+    printf("\n");
+
+    // printf("Dado encriptado: \n");
+    // for(uint8_t i = 0; i < SIZE_BUF; i++){
+    //     printf("%x ", buffer_uart[i]);
+    // }
+    // printf("\n");
+
+    for(size_t i = 0; i < 16; i++){
+        key_iv_buffer[i] = buffer_uart[i];
+    }
+    mbedtls_aes_crypt_cfb8(&aes, MBEDTLS_AES_DECRYPT, SIZE_TEST, key_iv_buffer, response_output, bufferEnd);
+
+    printf("Dado desencriptado: \n");
+    for(uint8_t i = 0; i < SIZE_TEST; i++){
+        printf("%x ", bufferEnd[i]);
+    }
+    printf("\n");
+    bufferEnd[SIZE_TEST] = '\0';
+    printf("\"%s\"\n",bufferEnd);
+
 }
 
 void __response_EEPROM_RESTART(void){
@@ -377,10 +430,10 @@ void response_c05()
                     //ESP_LOGI(TAG, "Written image length %d", binary_file_length);
                     if (binary_file_length >= packet.firm_size)
                     {
-                        uart_write_bytes(UART_NUM_1, "R05OK", 5);
+                        uart_write_bytes(UART_NUM_1, "R05VP", 5);
                         break;
                     }
-                    uart_write_bytes(UART_NUM_1, "R05OK", 5);
+                    uart_write_bytes(UART_NUM_1, "R05VP", 5);
                 } 
             
             }
@@ -408,7 +461,7 @@ void response_c05()
         uart_write_bytes(UART_NUM_1, "R05SF", 5);
         esp_restart();
     }
-    uart_write_bytes(UART_NUM_1, "R05CP", 5);
+    uart_write_bytes(UART_NUM_1, "R05UP", 5);
     ESP_LOGI(TAG, "Prepare to restart system!");
     esp_restart();
     
@@ -664,10 +717,7 @@ static void serial_uart_read(void *arg)
                         printf("Req C07 \n");
                         response_c07();
                     }
-                    else if (output_serial[2] == '8')
-                    {
-                         RSA_test();
-                    }
+
                     
                 }
             }

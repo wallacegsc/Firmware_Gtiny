@@ -30,14 +30,14 @@
 #define ADDRESS_LAST_LOG 131050
 #define MAX_LOGS 13105
 
-#define flag_default_relay  160  //10100000 int8
-#define flag_default_ultra  161  //10100001 int8
-#define flag_default_auto   162  //10100010 int8
-#define flag_default_event  163  //10100011 int8
-#define flag_inverter_relay 172  //10101100 int8
-#define flag_inverter_ultra 173  //10101101 int8
-#define flag_inverter_auto  174  //10101110 int8
-#define flag_inverter_event 175  //10101111 int8
+#define flag_default_relay  160  //10100000 uint8
+#define flag_default_ultra  161  //10100001 uint8
+#define flag_default_auto   162  //10100010 uint8
+#define flag_default_event  163  //10100011 uint8
+#define flag_inverter_relay 172  //10101100 uint8
+#define flag_inverter_ultra 173  //10101101 uint8
+#define flag_inverter_auto  174  //10101110 uint8
+#define flag_inverter_event 175  //10101111 uint8
 
 // Flag ataque -> xxxxxx00
 // Flag ultra  -> xxxxxx01

@@ -15,9 +15,8 @@ except Exception as erro:
     exit(0)
 
 
-cmd = ['P01','C01','C02','C03','C04','C06','C07']
-cmd = ['C06','C07']
-#cmd = ['C04']
+cmd = ['C01','C02','C03','C04','C06','C07']
+
 # print("Comando Enviado {} | type: {} ".format(cmd[0], type(cmd[0])))
 
 key = b'abcdefghijklmnop'

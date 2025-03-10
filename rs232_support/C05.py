@@ -11,7 +11,6 @@ except Exception as erro:
 
 
 cmd = ['C05']
-#cmd = ['C04']
 print("Comando Enviado {} | type: {} ".format(cmd[0], type(cmd[0])))
 
 key = b'abcdefghijklmnop'
@@ -79,7 +78,7 @@ for offset in tqdm.tqdm(range(0, size_firm - size_packet, size_packet), desc="Em
    except Exception:
       print('Nao recebeu')
       exit(0)
-   if response==b'R05OK':
+   if response==b'R05VP':
       continue
    elif response==b'R05TF':
       raise Exception("Gurdião: Timeout")
@@ -101,7 +100,7 @@ if (size_firm%size_packet != 0):
       print('Nao recebeu')
       exit(0)
    
-   if response!=b'R05OK':
+   if response!=b'R05VP':
       raise Exception("O Guardião não respondeu")
    
 try:
@@ -109,7 +108,7 @@ try:
 except Exception:
    print('Nao recebeu')
    exit(0)
-if response==b'R05CP':
+if response==b'R05UP':
    print("Sucesso: Reiniciando o sistema")
 elif response==b'R05EF':
    raise Exception("OTA end fail")

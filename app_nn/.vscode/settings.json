@@ -1,7 +1,7 @@
 {
   "C_Cpp.intelliSenseEngine": "default",
   "idf.adapterTargetName": "esp32",
-  "idf.portWin": "COM14",
+  "idf.portWin": "COM17",
   "idf.flashType": "UART",
   "files.associations": {
     "*.inc": "c",
@@ -16,6 +16,8 @@
     "tuple": "cpp",
     "type_traits": "cpp",
     "utility": "cpp",
-    "serialuart.h": "c"
+    "serialuart.h": "c",
+    "storage.h": "c",
+    "time.h": "c"
   }
 }
