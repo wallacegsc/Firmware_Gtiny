@@ -523,7 +523,6 @@ void response_c06()
 
             printf("ts interno atualizado - %ld \n", time(NULL));
             uart_write_bytes(UART_NUM_1, "R06TP", 5);
-
         }
         free(data_timestamp);
 }

@@ -1,0 +1,6 @@
+pandas==2.2.3
+pycryptodome==3.22.0
+pyserial==3.5
+pytz==2025.2
+tqdm==4.67.1
+tzdata==2025.2

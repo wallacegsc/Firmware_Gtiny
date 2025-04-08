@@ -15,7 +15,7 @@ print("Comando Enviado {} | type: {} ".format(cmd[0], type(cmd[0])))
 
 key = b'abcdefghijklmnop'
 
-s = serial.Serial(port='COM28',
+s = serial.Serial(port='COM6',
                   baudrate=115200,
                   bytesize=serial.EIGHTBITS,
                   parity=serial.PARITY_NONE,
@@ -23,7 +23,7 @@ s = serial.Serial(port='COM28',
                   timeout=20)
 
 t = ''
-firm_bin_path = r"C:\Users\LSE\Desktop\Hub\Guardiao\app_nn_tiny\app_nn\build\app.bin"
+firm_bin_path = r"build\app.bin" #Colocar diretorio do .bin do firmware do guardiao
 with open(firm_bin_path, "rb") as f:
     read_data = f.read()
     size_firm = len(read_data)
